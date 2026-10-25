@@ -1,1 +1,132 @@
-{% extends 'base.html' %}{% block title %}Take Exam{% endblock %}{% block content %}<form method="post"><div class="exam-header"><div><p class="eyebrow">{{ exam.subject.name|upper }} · GRADE {{ exam.grade_level }}</p><h1>{{ exam.title }}</h1><p class="muted">{{ exam.instructions }}</p></div><div class="timer" data-countdown="{{ exam.duration_minutes }}">00:00</div></div><div class="question-list">{% for question in exam.questions %}<div class="take-question"><div class="question-number">{{ loop.index }}</div><div class="w-100"><h3>{{ question.prompt }}</h3>{% for option in [question.option_a, question.option_b, question.option_c, question.option_d] if option %}<label class="option"><input type="radio" name="question_{{ question.id }}" value="{{ option }}" required><span>{{ option }}</span></label>{% endfor %}</div></div>{% endfor %}</div><div class="submit-bar"><span class="muted">{{ exam.questions|length }} questions · {{ exam.total_marks }} marks</span><button class="btn btn-primary" onclick="return confirm('Submit your answers now?')">Submit exam <i class="fa-solid fa-paper-plane"></i></button></div></form>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}{{ exam.title }}{% endblock %}
+{% block body_class %}exam-mode{% endblock %}
+{% block content %}
+{% if not started %}
+  <div class="exam-start-screen">
+    <div class="exam-start-card">
+      <p class="eyebrow">{{ exam.subject.name }} · Grade {{ exam.grade_level }}</p>
+      <h1>{{ exam.title }}</h1>
+      <p class="exam-start-description">{{ exam.instructions or exam.description or 'Read each question carefully and choose the best answer.' }}</p>
+      <div class="exam-start-meta">
+        <span><i class="fa-regular fa-clock"></i> {{ exam.duration_minutes }} minutes</span>
+        <span><i class="fa-regular fa-circle-question"></i> {{ exam.questions|length }} questions</span>
+        <span><i class="fa-regular fa-star"></i> {{ exam.total_marks }} marks</span>
+      </div>
+      <form method="post">
+        <button type="submit" name="start_exam" value="1" class="exam-start-button">Start exam <i class="fa-solid fa-arrow-right"></i></button>
+      </form>
+    </div>
+  </div>
+{% else %}
+<form class="exam-workspace" method="post" id="examForm">
+  <aside class="exam-panel" aria-label="Exam navigation">
+    <a class="exam-back" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-arrow-left"></i> Exit to dashboard</a>
+    <div class="exam-panel-heading">
+      <p class="eyebrow">{{ exam.subject.name }} · Grade {{ exam.grade_level }}</p>
+      <h1>{{ exam.title }}</h1>
+      <p>{{ exam.instructions or exam.description or 'Read each question carefully and choose the best answer.' }}</p>
+    </div>
+
+    <section class="exam-clock" aria-label="Time remaining">
+      <div class="clock-ring" id="clockRing" role="img" aria-label="Time remaining">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="clock-track" cx="50" cy="50" r="45"></circle>
+          <circle class="clock-progress" id="clockProgress" cx="50" cy="50" r="45"></circle>
+        </svg>
+        <div class="clock-copy">
+          <span class="clock-label">TIME LEFT</span>
+          <strong id="examTimer" data-duration="{{ exam.duration_minutes * 60 }}" data-exam-id="{{ exam.id }}">00:00:00</strong>
+        </div>
+      </div>
+      <p><i class="fa-regular fa-clock"></i> {{ exam.duration_minutes }} minutes allowed</p>
+    </section>
+
+    <section class="question-palette" aria-labelledby="paletteTitle">
+      <div class="palette-heading">
+        <h2 id="paletteTitle">Questions</h2>
+        <span><strong id="answeredCount">0</strong> / {{ exam.questions|length }} answered</span>
+      </div>
+      {% if exam.questions %}
+      <nav class="palette-grid" aria-label="Jump to question">
+        {% for question in exam.questions %}
+        <button class="palette-button{% if loop.first %} is-current{% endif %}" type="button" data-go-to="{{ loop.index0 }}" aria-label="Go to question {{ loop.index }}">{{ loop.index }}</button>
+        {% endfor %}
+      </nav>
+      {% else %}
+      <p class="palette-empty">No questions have been added to this exam yet.</p>
+      {% endif %}
+      <div class="palette-legend"><span><i class="legend-current"></i> Current</span><span><i class="legend-answered"></i> Answered</span><span><i class="legend-unanswered"></i> Unanswered</span></div>
+    </section>
+    <div class="exam-panel-footer"><i class="fa-solid fa-circle-info"></i> Your answers are saved in this page until you submit.</div>
+  </aside>
+
+  <section class="exam-main" aria-label="Exam questions">
+    <header class="exam-topline">
+      <div><span class="exam-live-dot"></span> Assessment in progress</div>
+      <span>{{ exam.total_marks }} marks total</span>
+    </header>
+
+    {% if exam.questions %}
+    <div class="exam-progress-row">
+      <span id="questionPosition">Question 1 of {{ exam.questions|length }}</span>
+      <div class="exam-progress-track" role="progressbar" aria-label="Question progress" aria-valuemin="1" aria-valuemax="{{ exam.questions|length }}" aria-valuenow="1" id="questionProgress"><span></span></div>
+      <span id="progressPercent">0% complete</span>
+    </div>
+
+    <div class="exam-question-stage">
+      {% for question in exam.questions %}
+      <section class="exam-question-card{% if not loop.first %} d-none{% endif %}" data-question-index="{{ loop.index0 }}" aria-labelledby="questionHeading{{ loop.index }}">
+        <div class="exam-question-meta"><span>QUESTION {{ '%02d'|format(loop.index) }}</span><span>{{ question.marks }} {{ 'mark' if question.marks == 1 else 'marks' }}</span></div>
+        <h2 id="questionHeading{{ loop.index }}">{{ question.prompt }}</h2>
+        <fieldset class="answer-options">
+          <legend class="visually-hidden">Choose an answer for question {{ loop.index }}</legend>
+          {% set answer_key = 'question_' ~ question.id %}
+          {% for option_key, option in [('A', question.option_a), ('B', question.option_b), ('C', question.option_c), ('D', question.option_d)] if option %}
+          <label class="answer-option">
+            <input type="radio" name="question_{{ question.id }}" value="{{ option_key }}" {% if submitted_answers.get(answer_key) == option_key %}checked{% endif %}>
+            <span class="answer-marker" aria-hidden="true"></span>
+            <span class="answer-text">{{ option }}</span>
+          </label>
+          {% endfor %}
+        </fieldset>
+      </section>
+      {% endfor %}
+    </div>
+
+    <div class="exam-question-controls">
+      <button class="exam-secondary-button" id="previousQuestion" type="button" disabled><i class="fa-solid fa-arrow-left"></i> Previous</button>
+      <button class="exam-next-button" id="nextQuestion" type="button">Next question <i class="fa-solid fa-arrow-right"></i></button>
+    </div>
+
+    <footer class="exam-submit-bar">
+      <div>
+        <p><strong id="remainingCount">{{ exam.questions|length }}</strong> unanswered <span>·</span> Answer every question to submit.</p>
+        <span class="exam-submit-hint" id="submitHint" aria-live="polite">Answer all questions to enable submission.</span>
+      </div>
+      <button class="exam-submit-button" type="submit" id="submitExam" disabled>Submit exam <i class="fa-solid fa-paper-plane"></i></button>
+    </footer>
+    {% else %}
+    <section class="exam-empty-state">
+      <i class="fa-regular fa-circle-question"></i>
+      <h2>This exam is not ready yet</h2>
+      <p>Your teacher has not added any questions. Return to your dashboard and check back later.</p>
+      <a class="exam-next-button" href="{{ url_for('dashboard') }}">Return to dashboard</a>
+    </section>
+    {% endif %}
+  </section>
+</form>
+<dialog class="exam-confirm-dialog" id="submitConfirmation" aria-labelledby="submitConfirmationTitle">
+  <div class="exam-confirm-content">
+    <div class="exam-confirm-icon"><i class="fa-solid fa-paper-plane"></i></div>
+    <p class="eyebrow">FINAL CHECK</p>
+    <h2 id="submitConfirmationTitle">Submit your exam?</h2>
+    <p>All {{ exam.questions|length }} questions are answered. Once submitted, you cannot change your answers.</p>
+    <div class="exam-confirm-actions">
+      <button class="exam-confirm-cancel" type="button" id="cancelSubmit">Review answers</button>
+      <button class="exam-confirm-submit" type="button" id="confirmSubmit">Yes, submit exam</button>
+    </div>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}

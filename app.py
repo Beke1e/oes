@@ -98,6 +98,48 @@ class Question(db.Model):
     exam = db.relationship("Exam", back_populates="questions")
 
 
+def answer_option_index(value):
+    answer_key = (value or "").strip().casefold()
+    if answer_key.startswith("option_"):
+        answer_key = answer_key[len("option_"):]
+    return {"a": 0, "b": 1, "c": 2, "d": 3}.get(answer_key)
+
+
+def question_option(question, index):
+    return (question.option_a, question.option_b, question.option_c, question.option_d)[index]
+
+
+def update_exam_total_marks(exam):
+    exam.total_marks = sum(question.marks or 0 for question in exam.questions)
+
+
+def migrate_question_answer_keys():
+    changed = False
+    for question in Question.query.all():
+        if answer_option_index(question.answer) is not None:
+            continue
+        legacy_label = (question.answer or "").strip().casefold()
+        legacy_index = {"option a": 0, "option b": 1, "option c": 2, "option d": 3}.get(legacy_label)
+        if legacy_index is not None:
+            question.answer = "ABCD"[legacy_index]
+            changed = True
+            continue
+        expected = " ".join((question.answer or "").casefold().split())
+        matches = [
+            index for index, option in enumerate(
+                (question.option_a, question.option_b, question.option_c, question.option_d)
+            )
+            if option and " ".join(option.casefold().split()) == expected
+        ]
+        if len(matches) == 1:
+            question.answer = "ABCD"[matches[0]]
+            changed = True
+        else:
+            app.logger.warning("Question %s has a legacy answer that could not be mapped to one option; edit its answer key.", question.id)
+    if changed:
+        db.session.commit()
+
+
 class Attempt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     exam_id = db.Column(db.Integer, db.ForeignKey("exam.id"), nullable=False)
@@ -289,7 +331,102 @@ def toggle_exam(exam_id):
 @login_required
 def exam_detail(exam_id):
     exam = db.get_or_404(Exam, exam_id)
-    return render_template("exam_detail.html", exam=exam)
+    return render_template("exam_detail.html", exam=exam, can_manage=can_manage_exam(exam))
+
+
+def render_question_form(exam, question=None, form_values=None):
+    return render_template(
+        "question_form.html",
+        exam=exam,
+        question=question,
+        form_values=form_values or {},
+        answer_index=answer_option_index(question.answer) if question else None,
+    )
+
+
+@app.route("/exams/<int:exam_id>/questions/new", methods=["GET", "POST"])
+@role_required("admin", "teacher")
+def create_question(exam_id):
+    exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
+
+    if request.method == "POST":
+        prompt = request.form.get("prompt", "").strip()
+        options = [request.form.get(f"option_{letter}", "").strip() or None for letter in "abcd"]
+        answer = request.form.get("answer", "").strip()
+        answer_index = answer_option_index(answer)
+        try:
+            marks = int(request.form.get("marks", "1"))
+        except ValueError:
+            marks = 0
+        if not prompt or marks < 1 or answer_index is None or not options[answer_index]:
+            flash("Enter a question, a positive mark value, and a correct answer for an available option.", "error")
+            return render_question_form(exam, form_values=request.form)
+
+        exam.questions.append(Question(
+            prompt=prompt,
+            option_a=options[0],
+            option_b=options[1],
+            option_c=options[2],
+            option_d=options[3],
+            answer="ABCD"[answer_index],
+            marks=marks,
+        ))
+        update_exam_total_marks(exam)
+        db.session.commit()
+        flash("Question added successfully.", "success")
+        return redirect(url_for("exam_detail", exam_id=exam.id))
+    return render_question_form(exam)
+
+
+@app.route("/exams/<int:exam_id>/questions/<int:question_id>/edit", methods=["GET", "POST"])
+@role_required("admin", "teacher")
+def edit_question(exam_id, question_id):
+    exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
+    question = Question.query.filter_by(id=question_id, exam_id=exam.id).first_or_404()
+
+    if request.method == "POST":
+        prompt = request.form.get("prompt", "").strip()
+        options = [request.form.get(f"option_{letter}", "").strip() or None for letter in "abcd"]
+        answer = request.form.get("answer", "").strip()
+        answer_index = answer_option_index(answer)
+        try:
+            marks = int(request.form.get("marks", "1"))
+        except ValueError:
+            marks = 0
+        if not prompt or marks < 1 or answer_index is None or not options[answer_index]:
+            flash("Enter a question, a positive mark value, and a correct answer for an available option.", "error")
+            return render_question_form(exam, question, request.form)
+
+        question.prompt = prompt
+        question.option_a, question.option_b, question.option_c, question.option_d = options
+        question.answer = "ABCD"[answer_index]
+        question.marks = marks
+        update_exam_total_marks(exam)
+        db.session.commit()
+        flash("Question updated successfully.", "success")
+        return redirect(url_for("exam_detail", exam_id=exam.id))
+    return render_question_form(exam, question)
+
+
+@app.post("/exams/<int:exam_id>/questions/<int:question_id>/delete")
+@role_required("admin", "teacher")
+def delete_question(exam_id, question_id):
+    exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
+    question = Question.query.filter_by(id=question_id, exam_id=exam.id).first_or_404()
+    exam.questions.remove(question)
+    update_exam_total_marks(exam)
+    db.session.commit()
+    flash("Question deleted.", "success")
+    return redirect(url_for("exam_detail", exam_id=exam.id))
 
 
 @app.route("/exams/<int:exam_id>/take", methods=["GET", "POST"])
@@ -300,39 +437,114 @@ def take_exam(exam_id):
     if not eligible:
         flash("This exam is not assigned to your grade and enrolled subjects.", "error")
         return redirect(url_for("dashboard"))
+
+    if request.method == "POST" and request.form.get("start_exam") == "1":
+        return render_template("take_exam.html", exam=exam, started=True, submitted_answers={})
+
     if request.method == "POST":
+        submitted_answers = {
+            f"question_{question.id}": request.form.get(f"question_{question.id}", "").strip()
+            for question in exam.questions
+        }
+        if not submitted_answers:
+            flash("This exam has no questions and cannot be submitted.", "error")
+            return render_template("take_exam.html", exam=exam, started=True, submitted_answers=submitted_answers)
+        if any(not answer for answer in submitted_answers.values()):
+            flash("Answer every question before submitting the exam.", "error")
+            return render_template("take_exam.html", exam=exam, started=True, submitted_answers=submitted_answers)
+        if any(
+            answer_option_index(submitted_answers[f"question_{question.id}"]) is None
+            or not question_option(
+                question,
+                answer_option_index(submitted_answers[f"question_{question.id}"])
+            )
+            for question in exam.questions
+        ):
+            flash("Choose one of the available options for every question.", "error")
+            return render_template("take_exam.html", exam=exam, started=True, submitted_answers=submitted_answers)
+        update_exam_total_marks(exam)
+
         score = 0
         for question in exam.questions:
-            response = request.form.get(f"question_{question.id}", "").strip().lower()
-            if response == question.answer.strip().lower():
+            response_index = answer_option_index(submitted_answers[f"question_{question.id}"])
+            expected_index = answer_option_index(question.answer)
+            if response_index == expected_index:
                 score += question.marks
         attempt = Attempt(exam=exam, student=current_user, score=score)
         db.session.add(attempt)
         db.session.commit()
         return render_template("result.html", attempt=attempt, exam=exam)
-    return render_template("take_exam.html", exam=exam)
+    return render_template("take_exam.html", exam=exam, started=False, submitted_answers={})
 
 
 @app.route("/questions/<int:exam_id>/import", methods=["POST"])
 @role_required("admin", "teacher")
 def import_questions(exam_id):
     exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
     upload = request.files.get("file")
     if not upload:
         flash("Choose a CSV file first.", "error")
         return redirect(url_for("exam_detail", exam_id=exam.id))
-    rows = csv.DictReader(io.StringIO(upload.stream.read().decode("utf-8-sig")))
-    for row in rows:
-        db.session.add(Question(exam=exam, prompt=row["prompt"], option_a=row.get("option_a"), option_b=row.get("option_b"), option_c=row.get("option_c"), option_d=row.get("option_d"), answer=row["answer"], marks=int(row.get("marks") or 1)))
+    content = upload.stream.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = content.decode("cp1252")
+        except UnicodeDecodeError:
+            flash("The CSV encoding is not supported. Save it as UTF-8 or Windows-1252 and try again.", "error")
+            return redirect(url_for("exam_detail", exam_id=exam.id))
+    rows = csv.DictReader(io.StringIO(text))
+    required_columns = {"prompt", "option_a", "option_b", "option_c", "option_d", "answer", "marks"}
+    if not rows.fieldnames or not required_columns.issubset(set(rows.fieldnames)):
+        flash("The CSV is missing required question columns.", "error")
+        return redirect(url_for("exam_detail", exam_id=exam.id))
+
+    questions = []
+    for row_number, row in enumerate(rows, start=2):
+        prompt = (row.get("prompt") or "").strip()
+        options = [(row.get(f"option_{letter}") or "").strip() or None for letter in "abcd"]
+        answer_index = answer_option_index(row.get("answer"))
+        try:
+            marks = int(row.get("marks") or 1)
+        except ValueError:
+            marks = 0
+        if not prompt or marks < 1 or answer_index is None or not options[answer_index]:
+            flash(
+                f"CSV row {row_number} must include a prompt, a positive mark value, and an answer key (A-D or option_a-option_d) for an available option.",
+                "error",
+            )
+            return redirect(url_for("exam_detail", exam_id=exam.id))
+        questions.append(Question(
+            prompt=prompt,
+            option_a=options[0],
+            option_b=options[1],
+            option_c=options[2],
+            option_d=options[3],
+            answer="ABCD"[answer_index],
+            marks=marks,
+        ))
+    if not questions:
+        flash("The CSV does not contain any questions.", "error")
+        return redirect(url_for("exam_detail", exam_id=exam.id))
+
+    exam.questions.extend(questions)
+    update_exam_total_marks(exam)
     db.session.commit()
     flash("Questions imported successfully.", "success")
     return redirect(url_for("exam_detail", exam_id=exam.id))
 
 
 @app.route("/exams/<int:exam_id>/export")
-@login_required
+@role_required("admin", "teacher")
 def export_questions(exam_id):
     exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["prompt", "option_a", "option_b", "option_c", "option_d", "answer", "marks"])
@@ -481,13 +693,14 @@ def seed_data():
     exam = Exam(title="Algebra Foundations", exam_type="MCQ", grade_level=8, subject=math, description="A focused check of algebraic thinking.", instructions="Read each question carefully. You have one attempt.", duration_minutes=15, teacher=teacher, total_marks=3)
     db.session.add(exam)
     db.session.flush()
-    db.session.add_all([Question(exam=exam, prompt="What is 3x when x = 4?", option_a="7", option_b="12", option_c="1", option_d="34", answer="12"), Question(exam=exam, prompt="Which expression equals 2(x + 3)?", option_a="2x + 3", option_b="x + 6", option_c="2x + 6", option_d="2x + 5", answer="2x + 6"), Question(exam=exam, prompt="What is the value of 10 - 2²?", option_a="6", option_b="16", option_c="8", option_d="4", answer="6")])
+    db.session.add_all([Question(exam=exam, prompt="What is 3x when x = 4?", option_a="7", option_b="12", option_c="1", option_d="34", answer="B"), Question(exam=exam, prompt="Which expression equals 2(x + 3)?", option_a="2x + 3", option_b="x + 6", option_c="2x + 6", option_d="2x + 5", answer="C"), Question(exam=exam, prompt="What is the value of 10 - 2²?", option_a="6", option_b="16", option_c="8", option_d="4", answer="A")])
     db.session.commit()
 
 
 with app.app_context():
     os.makedirs(app.instance_path, exist_ok=True)
     db.create_all()
+    migrate_question_answer_keys()
     seed_data()
 
 if __name__ == "__main__":

@@ -40,6 +40,8 @@ The SQLite database is created at `instance/soems.db` on first launch. To reset 
 
 ## CSV question format
 
+Question imports support UTF-8 (including files with a BOM) and Windows-1252 CSV files.
+
 ```csv
 prompt,option_a,option_b,option_c,option_d,answer,marks
 What is 2 + 2?,3,4,5,6,4,1

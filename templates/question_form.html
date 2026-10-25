@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit question' if question else 'Add question' }} · {{ exam.title }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('exam_detail', exam_id=exam.id) }}"><i class="fa-solid fa-arrow-left"></i> {{ exam.title }}</a>
+    <h1>{{ 'Edit question' if question else 'Add a question' }}</h1>
+    <p class="muted">The answer key is stored as a letter (A-D).</p>
+  </div>
+</div>
+<form method="post" class="form-card">
+  <div class="row g-4">
+    <div class="col-12">
+      <label for="prompt">Question</label>
+      <textarea class="form-control" id="prompt" name="prompt" rows="3" required>{{ form_values.get('prompt', question.prompt if question else '') }}</textarea>
+    </div>
+    {% for key, label, field in [('A', 'Option A', 'option_a'), ('B', 'Option B', 'option_b'), ('C', 'Option C', 'option_c'), ('D', 'Option D', 'option_d')] %}
+    <div class="col-md-6">
+      <label for="{{ field }}">{{ label }}</label>
+      <input class="form-control" id="{{ field }}" name="{{ field }}" value="{{ form_values.get(field, question|attr(field) if question else '') }}">
+    </div>
+    {% endfor %}
+    <div class="col-md-6">
+      <label for="answer">Correct answer</label>
+      <select class="form-select" id="answer" name="answer" required>
+        {% for key, label, field in [('A', 'Option A', 'option_a'), ('B', 'Option B', 'option_b'), ('C', 'Option C', 'option_c'), ('D', 'Option D', 'option_d')] %}
+        {% set option_value = form_values.get(field, question|attr(field) if question else '') %}
+        <option value="{{ key }}" {% if (form_values.get('answer') == key) or (not form_values.get('answer') and answer_index == loop.index0) %}selected{% endif %} {% if not option_value %}disabled{% endif %}>{{ key }} — {{ label }}{% if option_value %}: {{ option_value }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <small class="muted">CSV imports may also use option_a, option_b, option_c, or option_d.</small>
+    </div>
+    <div class="col-md-6">
+      <label for="marks">Marks</label>
+      <input class="form-control" id="marks" name="marks" type="number" min="1" value="{{ form_values.get('marks', question.marks if question else 1) }}" required>
+    </div>
+  </div>
+  <div class="form-actions mt-4">
+    <a class="btn btn-light" href="{{ url_for('exam_detail', exam_id=exam.id) }}">Cancel</a>
+    <button class="btn btn-primary" type="submit">{{ 'Save question' if question else 'Add question' }}</button>
+  </div>
+</form>
+{% endblock %}

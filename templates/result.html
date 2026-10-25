@@ -1,1 +1,32 @@
-{% extends 'base.html' %}{% block title %}Result{% endblock %}{% block content %}<div class="result-page"><div class="result-icon"><i class="fa-solid fa-check"></i></div><p class="eyebrow">SUBMISSION RECEIVED</p><h1>Nicely done, {{ current_user.full_name.split(' ')[0] }}.</h1><p class="muted">Your result for {{ exam.title }} is ready.</p><div class="score-ring"><strong>{{ attempt.score }}</strong><span>/ {{ exam.total_marks }} marks</span></div><a href="{{ url_for('dashboard') }}" class="btn btn-primary">Back to dashboard <i class="fa-solid fa-arrow-right"></i></a></div>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Exam Result{% endblock %}
+{% block content %}
+{% set percentage = ((attempt.score / exam.total_marks * 100)|round|int) if exam.total_marks else 0 %}
+<main class="result-report">
+  <section class="result-report-card" aria-labelledby="resultTitle">
+    <div class="result-success-icon" aria-hidden="true"><i class="fa-solid fa-check"></i></div>
+    <p class="eyebrow">SUBMISSION SUCCESSFUL</p>
+    <h1 id="resultTitle">Exam submitted</h1>
+    <p class="result-message">Your answers have been submitted and your result is ready.</p>
+
+    <div class="result-score">
+      <strong>{{ attempt.score }}</strong>
+      <span>/ {{ exam.total_marks }} marks</span>
+      <small>{{ percentage }}% score</small>
+    </div>
+
+    <section class="result-details" aria-labelledby="resultDetailsTitle">
+      <h2 id="resultDetailsTitle">Result report</h2>
+      <dl>
+        <div><dt>Exam</dt><dd>{{ exam.title }}</dd></div>
+        <div><dt>Subject</dt><dd>{{ exam.subject.name }}</dd></div>
+        <div><dt>Grade</dt><dd>{{ exam.grade_level }}</dd></div>
+        <div><dt>Questions answered</dt><dd>{{ exam.questions|length }} / {{ exam.questions|length }}</dd></div>
+        <div><dt>Submitted</dt><dd>{{ attempt.submitted_at.strftime('%d %b %Y, %H:%M') }}</dd></div>
+      </dl>
+    </section>
+
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary result-dashboard-link">Back to dashboard <i class="fa-solid fa-arrow-right"></i></a>
+  </section>
+</main>
+{% endblock %}

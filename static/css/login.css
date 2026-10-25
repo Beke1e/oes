@@ -1,0 +1,76 @@
+.login-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  color: #18252d;
+  background: #fff;
+}
+
+.login-art {
+  color: #18252d;
+  background: #fff;
+}
+
+.login-art::before {
+  display: none;
+}
+
+.login-art::after {
+  border-color: #edf0f1;
+  box-shadow: 0 0 0 35px #fff, 0 0 0 36px #edf0f1, 0 0 0 70px #fff, 0 0 0 71px #edf0f1;
+}
+
+.login-art .brand.light {
+  color: #18252d;
+}
+
+.login-art .brand.light small {
+  color: #77858a;
+}
+
+.login-art .brand-mark {
+  border-color: #dce3e2;
+  color: #513b83;
+}
+
+.login-art .art-copy h1 {
+  color: #18252d;
+}
+
+.login-art .art-copy h1 em {
+  color: #513b83;
+}
+
+.login-art .art-copy p:not(.eyebrow) {
+  color: #59676d;
+}
+
+.login-art .login-highlights span {
+  color: #38474c;
+  background: #f8f9fa;
+  border-color: #e5e9e6;
+}
+
+.login-art .login-highlights i {
+  color: #513b83;
+}
+
+.login-art .art-footer {
+  color: #77858a;
+}
+
+.login-panel {
+  min-height: 100vh;
+  background: #fff;
+}
+
+.login-card {
+  background: #fff;
+  border-color: #e8ebec;
+  box-shadow: 0 18px 48px rgba(25, 43, 49, .07);
+}
+
+@media (max-width: 700px) {
+  .login-art {
+    min-height: 380px;
+  }
+}
