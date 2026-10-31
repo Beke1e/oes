@@ -19,7 +19,7 @@
       <a class="nav-link" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-grid-2"></i> Dashboard</a>
       {% if current_user.role in ['admin', 'teacher'] %}<a class="nav-link" href="{{ url_for('exams') }}"><i class="fa-solid fa-file-pen"></i> Exams</a><a class="nav-link" href="{{ url_for('subjects') }}"><i class="fa-solid fa-book-open"></i> Subjects</a>{% endif %}
       {% if current_user.role == 'admin' %}<a class="nav-link" href="{{ url_for('users') }}"><i class="fa-solid fa-users"></i> Users</a>{% endif %}
-      {% if current_user.role == 'student' %}<a class="nav-link" href="{{ url_for('dashboard') }}#scores"><i class="fa-solid fa-chart-simple"></i> My scores</a>{% endif %}
+      {% if current_user.role == 'student' %}<a class="nav-link" href="{{ url_for('dashboard') }}#available-exams"><i class="fa-solid fa-file-pen"></i> Exams</a><a class="nav-link" href="{{ url_for('dashboard') }}#scores"><i class="fa-solid fa-chart-simple"></i> My scores</a>{% endif %}
     </nav>
     <div class="sidebar-bottom"><a class="nav-link" href="{{ url_for('about') }}"><i class="fa-solid fa-circle-info"></i> About EMS</a><a class="nav-link" href="{{ url_for('logout') }}"><i class="fa-solid fa-arrow-right-from-bracket"></i> Sign Out</a></div>
   </aside>

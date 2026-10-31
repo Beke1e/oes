@@ -1,16 +1,13 @@
-<<<<<<< HEAD
-# oes
-Online Exam Management System (E-MS) is a secure, intelligent, and user-friendly platform for managing online examinations . It gives educators the calm, clear tools they need and gives learners a fair place to show what they know.
-=======
 # Smart Online Examination Management System (SOEMS)
 
-SOEMS is a Flask-based examination platform for administrators, teachers, and students across Grades 1–12.
+SOEMS is a Flask-based examination platform for administrators, teachers, and learners in elementary schools, high schools, colleges, and universities. It provides role-aware tools for creating, delivering, and evaluating exams across different educational levels.
 
 ## Included in this starter
 
 - Secure password hashing and Flask-Login authentication
 - Role-aware Administrator, Teacher, and Student dashboards
-- Smart exam assignment by active status, grade level, and subject enrollment
+- Exam access based on active status and student grade level
+- Support for elementary, high school, college, and university examination programs
 - Exam builder with MCQ, True/False, and Fill in the Blank types
 - Countdown timer with browser auto-submit and server-side instant scoring
 - CSV question import and export
@@ -70,4 +67,3 @@ For production, keep `FLASK_DEBUG=0`, use a unique secret key, and serve uploade
 ## Next production increments
 
 The current foundation is intentionally compact. The next modules to add are full CRUD forms for users/subjects, notification persistence, profile photo upload validation, PDF export, analytics charts, CSRF protection with Flask-WTF, and audit logging.
->>>>>>> 15228d1 (Build online exam management system)

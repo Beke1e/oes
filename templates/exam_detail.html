@@ -62,4 +62,26 @@
   <div class="empty-state">No questions yet. Add a question or import a CSV to populate this exam.</div>
   {% endfor %}
 </div>
+{% if current_user.role == 'teacher' and can_manage %}
+<div class="section-header mt-5">
+  <h3>Exam results</h3>
+  <a class="btn btn-light" href="{{ url_for('export_results', exam_id=exam.id) }}"><i class="fa-solid fa-download"></i> Export results</a>
+</div>
+<div class="table-card">
+  <table>
+    <thead><tr><th>Student</th><th>Course</th><th>Score</th></tr></thead>
+    <tbody>
+      {% for attempt in results %}
+      <tr>
+        <td>{{ attempt.student.full_name }}</td>
+        <td>{{ exam.subject.name }}</td>
+        <td><strong>{{ attempt.score }} / {{ exam.total_marks }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No results have been submitted yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

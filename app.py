@@ -25,6 +25,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024
 app.config["PROFILE_UPLOAD_FOLDER"] = os.path.join(app.static_folder, "uploads", "profiles")
 app.config["ALLOWED_PROFILE_EXTENSIONS"] = {"jpg", "jpeg", "png", "webp"}
+app.config["DEFAULT_STUDENT_PASSWORD"] = os.getenv("DEFAULT_STUDENT_PASSWORD", "password123")
 db.init_app(app)
 login_manager.init_app(app)
 
@@ -247,8 +248,10 @@ def dashboard():
         average = round(sum(a.score for a in attempts) / len(attempts)) if attempts else 0
         stats = {"exams": len(exams), "active": sum(e.is_active for e in exams), "participation": len(attempts), "average": average}
         return render_template("dashboard.html", stats=stats, teacher_exams=exams)
-    enrolled_ids = [entry.subject_id for entry in current_user.subjects]
-    available = Exam.query.filter(Exam.is_active.is_(True), Exam.grade_level == current_user.grade_level, Exam.subject_id.in_(enrolled_ids or [0])).all()
+    available = Exam.query.filter(
+        Exam.is_active.is_(True),
+        Exam.grade_level == current_user.grade_level,
+    ).all()
     attempts = Attempt.query.filter_by(student_id=current_user.id).order_by(Attempt.submitted_at.desc()).all()
     return render_template("dashboard.html", available_exams=available, attempts=attempts)
 
@@ -331,7 +334,8 @@ def toggle_exam(exam_id):
 @login_required
 def exam_detail(exam_id):
     exam = db.get_or_404(Exam, exam_id)
-    return render_template("exam_detail.html", exam=exam, can_manage=can_manage_exam(exam))
+    results = Attempt.query.filter_by(exam_id=exam.id).join(User).order_by(User.full_name, Attempt.submitted_at).all()
+    return render_template("exam_detail.html", exam=exam, can_manage=can_manage_exam(exam), results=results)
 
 
 def render_question_form(exam, question=None, form_values=None):
@@ -433,9 +437,9 @@ def delete_question(exam_id, question_id):
 @role_required("student")
 def take_exam(exam_id):
     exam = db.get_or_404(Exam, exam_id)
-    eligible = exam.is_active and exam.grade_level == current_user.grade_level and any(item.subject_id == exam.subject_id for item in current_user.subjects)
+    eligible = exam.is_active and exam.grade_level == current_user.grade_level
     if not eligible:
-        flash("This exam is not assigned to your grade and enrolled subjects.", "error")
+        flash("This exam is not assigned to your grade.", "error")
         return redirect(url_for("dashboard"))
 
     if request.method == "POST" and request.form.get("start_exam") == "1":
@@ -556,6 +560,27 @@ def export_questions(exam_id):
     return response
 
 
+@app.route("/exams/<int:exam_id>/results/export")
+@role_required("teacher")
+def export_results(exam_id):
+    exam = db.get_or_404(Exam, exam_id)
+    if not can_manage_exam(exam):
+        flash("You can only manage exams assigned to you.", "error")
+        return redirect(url_for("exams"))
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["student_full_name", "course_name", "score"])
+    results = Attempt.query.filter_by(exam_id=exam.id).join(User).order_by(User.full_name, Attempt.submitted_at).all()
+    for attempt in results:
+        writer.writerow([attempt.student.full_name, exam.subject.name, attempt.score])
+
+    response = make_response("\ufeff" + output.getvalue())
+    response.headers["Content-Disposition"] = f"attachment; filename={secure_filename(exam.title + '_results.csv')}"
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    return response
+
+
 @app.route("/subjects")
 @role_required("admin", "teacher")
 def subjects():
@@ -611,7 +636,84 @@ def delete_subject(subject_id):
 @app.route("/users")
 @role_required("admin")
 def users():
-    return render_template("users.html", users=User.query.order_by(User.full_name).all())
+    return render_template(
+        "users.html",
+        users=User.query.order_by(User.full_name).all(),
+        default_student_password=app.config["DEFAULT_STUDENT_PASSWORD"],
+    )
+
+
+@app.post("/users/import")
+@role_required("admin")
+def import_students():
+    upload = request.files.get("file")
+    if not upload:
+        flash("Choose a CSV file first.", "error")
+        return redirect(url_for("users"))
+
+    content = upload.stream.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = content.decode("cp1252")
+        except UnicodeDecodeError:
+            flash("The CSV encoding is not supported. Save it as UTF-8 or Windows-1252 and try again.", "error")
+            return redirect(url_for("users"))
+
+    rows = csv.DictReader(io.StringIO(text))
+    if not rows.fieldnames:
+        flash("The CSV must include full_name, email, and grade_level columns.", "error")
+        return redirect(url_for("users"))
+    column_names = {
+        " ".join((column or "").strip().casefold().replace("_", " ").split()): column
+        for column in rows.fieldnames
+    }
+    full_name_column = next(
+        (column_names[name] for name in ("full name", "name") if name in column_names),
+        None,
+    )
+    email_column = column_names.get("email")
+    grade_column = next(
+        (column_names[name] for name in ("grade level", "grade") if name in column_names),
+        None,
+    )
+    if not full_name_column or not email_column or not grade_column:
+        flash("The CSV must include full_name, email, and grade_level columns.", "error")
+        return redirect(url_for("users"))
+
+    imported_users = []
+    seen_emails = set()
+    for row_number, row in enumerate(rows, start=2):
+        full_name = (row.get(full_name_column) or "").strip()
+        email = (row.get(email_column) or "").strip().lower()
+        grade_value = (row.get(grade_column) or "").strip()
+        grade_value = grade_value.casefold().replace("grade", "").strip()
+        try:
+            grade_level = int(grade_value)
+        except ValueError:
+            grade_level = 0
+
+        if not full_name or not email or "@" not in email or grade_level < 1:
+            flash(f"CSV row {row_number} must include a valid full_name, email, and positive grade_level.", "error")
+            return redirect(url_for("users"))
+        if email in seen_emails or User.query.filter_by(email=email).first():
+            flash(f"CSV row {row_number} uses an email address that already exists: {email}.", "error")
+            return redirect(url_for("users"))
+
+        seen_emails.add(email)
+        user = User(full_name=full_name, email=email, role="student", grade_level=grade_level)
+        user.set_password(app.config["DEFAULT_STUDENT_PASSWORD"])
+        imported_users.append(user)
+
+    if not imported_users:
+        flash("The CSV does not contain any students.", "error")
+        return redirect(url_for("users"))
+
+    db.session.add_all(imported_users)
+    db.session.commit()
+    flash(f"{len(imported_users)} student(s) imported successfully. Default password: {app.config['DEFAULT_STUDENT_PASSWORD']}", "success")
+    return redirect(url_for("users"))
 
 
 @app.get("/users/<int:user_id>")
